@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Select Flights</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .group { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+    .group-name { font-weight: bold; }
+    .unit { margin-left: 20px; }
+  </style>
+</head>
+<body>
+  <h2>Situation</h2>
+  <p>{{ situation | safe }}</p>
+
+  <h2>Blue Task</h2>
+  <p>{{ blue_task | safe }}</p>
+  <hr>
+  <h1>Select Flights to Include</h1>
+  <form action="/generate" method="post">
+    {% set groups = {} %}
+    {% for f in flights %}
+        {% if f.group_name not in groups %}
+            {% set _ = groups.update({f.group_name: []}) %}
+        {% endif %}
+        {% set _ = groups[f.group_name].append(f) %}
+    {% endfor %}
+
+    {% for group_name, units in groups.items() %}
+    <div class="group">
+      <label class="group-name">
+        <input type="checkbox" name="flights" value="{{ group_name }}">
+        {{ group_name }} ({{ units|length }} units)
+      </label>
+      <div>
+        {% for u in units %}
+          <div class="unit">{{ u.unit_name }} - {{ u.type }}</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
+    <button type="submit">Generate Briefing</button>
+  </form>
+</body>
+</html>
