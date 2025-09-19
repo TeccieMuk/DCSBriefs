@@ -1,46 +1,113 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Select Flights</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    .group { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
-    .group-name { font-weight: bold; }
-    .unit { margin-left: 20px; }
-  </style>
+    <title>Mission Flights</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .flight-item { margin-bottom: 6px; }
+        .preview { border-top: 1px solid #ccc; margin-top: 15px; padding-top: 15px; }
+        .map { width: 600px; height: 400px; margin-top: 10px; }
+        table { border-collapse: collapse; margin-top: 10px; }
+        td, th { border: 1px solid #999; padding: 4px 8px; }
+    </style>
 </head>
 <body>
-  <h2>Situation</h2>
-  <p>{{ situation | safe }}</p>
+    <h1>Mission Briefing</h1>
 
-  <h2>Blue Task</h2>
-  <p>{{ blue_task | safe }}</p>
-  <hr>
-  <h1>Select Flights to Include</h1>
-  <form action="/generate" method="post">
-    {% set groups = {} %}
-    {% for f in flights %}
-        {% if f.group_name not in groups %}
-            {% set _ = groups.update({f.group_name: []}) %}
-        {% endif %}
-        {% set _ = groups[f.group_name].append(f) %}
-    {% endfor %}
+    <h2>Situation</h2>
+    <p>{{ situation }}</p>
 
-    {% for group_name, units in groups.items() %}
-    <div class="group">
-      <label class="group-name">
-        <input type="checkbox" name="flights" value="{{ group_name }}">
-        {{ group_name }} ({{ units|length }} units)
-      </label>
-      <div>
-        {% for u in units %}
-          <div class="unit">{{ u.unit_name }} - {{ u.type }}</div>
-        {% endfor %}
-      </div>
+    <h2>Blue Task</h2>
+    <p>{{ blue_task }}</p>
+
+<h2>Flights</h2>
+<div id="flightList">
+    {% for flight in flights %}
+    <div class="flight-item">
+        <input type="radio" name="flightSelect" id="flight{{ loop.index0 }}" 
+               data-index="{{ loop.index0 }}" onchange="showPreview(this)">
+        <label for="flight{{ loop.index0 }}">{{ flight.callsign }} ({{ flight.type }})</label>
     </div>
     {% endfor %}
+</div>
 
-    <button type="submit">Generate Briefing</button>
-  </form>
+<div id="previews"></div>
+
+<script>
+const flights = {{ flights|tojson }};  // Make sure this includes lat/lon
+let currentPreview = null;
+
+function showPreview(radio) {
+    const index = parseInt(radio.dataset.index);
+    const flight = flights[index];
+    const previewContainer = document.getElementById("previews");
+
+    // Remove previous preview
+    if (currentPreview) {
+        currentPreview.remove();
+        currentPreview = null;
+    }
+
+    // Create new preview div
+    const div = document.createElement("div");
+    div.id = "preview" + index;
+    div.className = "preview";
+    currentPreview = div;
+
+    // Flight info table
+    let tableHtml = `
+    <table class="flight-info">
+        <tr><th>Callsign</th><td>${flight.callsign}</td></tr>
+        <tr><th>Type</th><td>${flight.type}</td></tr>
+        <tr><th>Waypoints</th><td>${flight.waypoints.length}</td></tr>
+    </table>
+    `;
+
+    // Waypoints table
+    tableHtml += `<table class="waypoints">
+        <thead>
+            <tr><th>WP</th><th>Lat</th><th>Lon</th><th>Alt</th><th>Speed</th></tr>
+        </thead>
+        <tbody>
+    `;
+    flight.waypoints.forEach((wp, i) => {
+        tableHtml += `<tr>
+            <td>WP${i+1}</td>
+            <td>${wp.lat.toFixed(6)}</td>
+            <td>${wp.lon.toFixed(6)}</td>
+            <td>${wp.alt}</td>
+            <td>${wp.speed}</td>
+        </tr>`;
+    });
+    tableHtml += `</tbody></table>`;
+
+    // Map div
+    tableHtml += `<div id="map${index}" class="map" style="height:400px;"></div>`;
+
+    div.innerHTML = tableHtml;
+    previewContainer.appendChild(div);
+
+    // Initialize map
+    const map = L.map("map" + index).setView([flight.waypoints[0].lat, flight.waypoints[0].lon], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: 'Map data © OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Draw flight path polyline
+    if (flight.waypoints && flight.waypoints.length > 0) {
+        const coords = flight.waypoints.map(wp => [wp.lat, wp.lon]);
+        const line = L.polyline(coords, {color: 'red'}).addTo(map);
+        map.fitBounds(line.getBounds());
+
+        // Add markers
+        coords.forEach((c, i) => {
+            L.marker(c).addTo(map)
+             .bindPopup(`WP${i+1}: alt ${flight.waypoints[i].alt}, speed ${flight.waypoints[i].speed}`);
+        });
+    }
+}
+</script>
 </body>
 </html>

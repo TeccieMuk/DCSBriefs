@@ -9,26 +9,38 @@ app.secret_key = "dev-secret-key"  # replace later
 def index():
     return render_template('index.html')
 
-@app.route('/upload', methods=['POST'])
+@app.route("/upload", methods=["POST"])
 def upload():
-    file = request.files['mizfile']
-    if not file or not file.filename.endswith('.miz'):
-        return "Please upload a .miz file", 400
+    if "file" not in request.files:
+        return "No file part", 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return "No file selected", 400
 
     tmp_dir = tempfile.mkdtemp()
     path = os.path.join(tmp_dir, file.filename)
     file.save(path)
 
-    # Parse mission
     data = parser.parse_miz(path)
-    flights = data['flights']
-    situation = data['situation']
-    blue_task = data['blue_task']
+    session["flights"] = data["flights"]
+    session["situation"] = data["situation"]
+    session["blue_task"] = data["blue_task"]
 
-    session['miz_path'] = path
-    session['flights'] = flights
+    return redirect("/select_flights")
 
-    return render_template('select.html', flights=flights, situation=situation, blue_task=blue_task)
+
+@app.route("/select_flights")
+def select_flights():
+    flights = session.get("flights", [])
+    situation = session.get("situation", "")
+    blue_task = session.get("blue_task", "")
+    return render_template(
+        "select.html",
+        flights=flights,
+        situation=situation,
+        blue_task=blue_task
+    )
 
 
 @app.route('/generate', methods=['POST'])
@@ -52,6 +64,34 @@ def generate():
     )
 
     return send_file(zip_path, as_attachment=True)
+
+@app.route('/review')
+def review():
+    flights = session.get('selected_flights', [])
+    return render_template('review.html', flights=flights)
+
+@app.route('/get_flight/<int:index>')
+def get_flight(index):
+    flights = session.get('selected_flights', [])
+    if 0 <= index < len(flights):
+        return flights[index]
+    return {}, 404
+
+@app.route("/flights/<flight_id>")
+def flight_detail(flight_id):
+    flights = session.get("flights", [])
+    flight = next((f for f in flights if f["group_name"] == flight_id), None)
+    if not flight:
+        return "Flight not found", 404
+
+    # temporary dummy waypoints until we parse real ones
+    flight["waypoints"] = [
+        {"name": "WP1", "lat": 36.123, "lon": -115.123, "alt": 7620, "speed": 220},
+        {"name": "WP2", "lat": 36.133, "lon": -115.133, "alt": 7620, "speed": 220},
+        {"name": "WP3", "lat": 36.143, "lon": -115.143, "alt": 7620, "speed": 220},
+    ]
+
+    return render_template("flight.html", flight=flight)
 
 if __name__ == "__main__":
     app.run(debug=True)

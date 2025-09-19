@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Flight {{ flight.name }}</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 1rem; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 2rem; }
+        th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: center; }
+        #map { height: 500px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>{{ flight.name }} ({{ flight.aircraft }})</h1>
+
+    <h2>Flight Plan</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Waypoint</th>
+                <th>Lat</th>
+                <th>Lon</th>
+                <th>Altitude (m)</th>
+                <th>Speed (kt)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for wp in flight.waypoints %}
+            <tr>
+                <td>{{ wp.name }}</td>
+                <td>{{ wp.lat }}</td>
+                <td>{{ wp.lon }}</td>
+                <td>{{ wp.alt }}</td>
+                <td>{{ wp.speed }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <h2>Map</h2>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const waypoints = {{ flight.waypoints|tojson }};
+        const map = L.map('map').setView([waypoints[0].lat, waypoints[0].lon], 10);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        const latlngs = waypoints.map(wp => [wp.lat, wp.lon]);
+        latlngs.forEach((pos, i) => {
+            L.marker(pos).addTo(map).bindPopup(waypoints[i].name);
+        });
+        L.polyline(latlngs, {color: 'blue'}).addTo(map);
+    </script>
+</body>
+</html>

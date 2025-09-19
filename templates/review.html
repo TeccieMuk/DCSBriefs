@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flight Review</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #map { width: 800px; height: 500px; margin-top: 20px; }
+        table { border-collapse: collapse; margin-top: 15px; min-width: 300px; }
+        td, th { border: 1px solid #999; padding: 4px 8px; }
+        .flight-item { margin-bottom: 6px; }
+    </style>
+    <script>
+        let map, flightLayer;
+
+        async function loadFlight(index) {
+            const res = await fetch(`/get_flight/${index}`);
+            if (!res.ok) return;
+            const flight = await res.json();
+
+            // Update details table
+            const table = document.getElementById('flightDetails');
+            table.innerHTML = `
+                <tr><th>Callsign</th><td>${flight.callsign}</td></tr>
+                <tr><th>Aircraft</th><td>${flight.type}</td></tr>
+                <tr><th>Waypoints</th><td>${flight.waypoints?.length || 0}</td></tr>
+            `;
+
+            // Update map
+            if (flightLayer) {
+                flightLayer.remove();
+            }
+            if (flight.waypoints && flight.waypoints.length > 0) {
+                const coords = flight.waypoints.map(wp => [wp.lat, wp.lon]);
+                flightLayer = L.polyline(coords, {color: 'red'}).addTo(map);
+                map.fitBounds(flightLayer.getBounds());
+
+                coords.forEach((c, i) => {
+                    L.marker(c).addTo(map)
+                        .bindPopup(flight.waypoints[i].name || `WP${i+1}`);
+                });
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            map = L.map('map').setView([41.5, 44.8], 7);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: 'Map data © OpenStreetMap contributors'
+            }).addTo(map);
+
+            // auto-load first flight
+            const firstRadio = document.querySelector('input[name="flightSelect"]');
+            if (firstRadio) {
+                firstRadio.checked = true;
+                loadFlight(firstRadio.value);
+            }
+        });
+    </script>
+</head>
+<body>
+    <h1>Review Flights</h1>
+
+    <div id="flightList">
+        {% for flight in flights %}
+        <div class="flight-item">
+            <input type="radio" id="flight{{ loop.index0 }}" name="flightSelect" 
+                   value="{{ loop.index0 }}" onclick="loadFlight(this.value)">
+            <label for="flight{{ loop.index0 }}">{{ flight.callsign }} ({{ flight.type }})</label>
+        </div>
+        {% endfor %}
+    </div>
+
+    <h2>Flight Details</h2>
+    <table id="flightDetails"></table>
+
+    <h2>Flight Plan</h2>
+    <div id="map"></div>
+</body>
+</html>

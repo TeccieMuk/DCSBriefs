@@ -1,3 +1,4 @@
+import math
 import zipfile
 from slpp import slpp as lua
 
@@ -16,6 +17,12 @@ def parse_miz(miz_path):
 
         mission_data = lua.decode(mission_text)
 
+        map = mission_data.get('map')
+        center_x = map.get('centerX')
+        center_y = map.get('centerY')
+        center_lat = 41 + 41.274 / 60     # 41.6879 approx
+        center_lon = 41 + 26.656 / 60     # 41.4443 approx
+
         blue = mission_data.get('coalition', {}).get('blue', {})
         countries = blue.get('country', [])
         if isinstance(countries, dict):
@@ -30,12 +37,16 @@ def parse_miz(miz_path):
                 units = g.get('units', [])
                 if isinstance(units, dict):
                     units = list(units.values())
-                for u in units:
-                    flights.append({
-                        "group_name": g.get('name', 'Unknown'),
-                        "unit_name": u.get('name', 'Unknown'),
-                        "type": u.get('type', 'Unknown')
-                    })
+
+                # Use just the first unit to get aircraft type
+                u = units[0] if units else {}
+                flights.append({
+                    "group_name": g.get('name', 'Unknown'),
+                    "unit_name": u.get('name', 'Unknown'),
+                    "callsign": u.get('callsign', {}).get('name', 'Unknown'),  # optional callsign
+                    "type": u.get('type', 'Unknown'),
+                    "waypoints": extract_waypoints(g, center_x, center_y, center_lat, center_lon)
+                })
 
         # ---- Parse l10n/DEFAULT/dictionary for briefing text ----
         if 'l10n/DEFAULT/dictionary' in z.namelist():
@@ -60,3 +71,46 @@ def parse_miz(miz_path):
         "situation": situation,
         "blue_task": blue_task
     }
+
+
+def extract_waypoints(group, center_x_m, center_y_m, center_lat, center_lon):
+    """
+    Returns a list of dicts for the waypoints with x/y/alt/speed.
+    """
+    route = group.get("route", {})
+    points = route.get("points", [])
+
+    waypoints = []
+
+    for p in points.values():
+        
+        wp = {
+            "x": p.get("x"),
+            "y": p.get("y"),
+            "name": p.get("name"),
+            "alt": p.get("alt", 0),
+            "speed": p.get("speed", 0),
+            "type": p.get("type", ""),
+            "action": p.get("action", "")
+        }
+
+        wp["lat"], wp["lon"] = meters_to_latlon(
+            wp["x"], wp["y"], center_x_m, center_y_m, center_lat, center_lon
+        )
+
+        waypoints.append(wp)
+    return waypoints
+
+def meters_to_latlon(x, y, center_x_m, center_y_m, center_lat, center_lon):
+    """
+    Convert DCS x/y (meters) relative to map center to decimal degrees lat/lon.
+    """
+    dx = x - center_x_m  # east offset
+    dy = y - center_y_m  # north offset
+
+    meters_per_deg_lat = 111320
+    meters_per_deg_lon = 111320 * math.cos(math.radians(center_lat))
+
+    lat = center_lat + (dx / meters_per_deg_lat)
+    lon = center_lon + (dy / meters_per_deg_lon)
+    return lat, lon
