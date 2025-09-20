@@ -1,11 +1,24 @@
+import calendar
+import datetime
 import math
 import zipfile
 from slpp import slpp as lua
+
+from dcs_briefgen.projection import active_map, miz_to_ll
 
 def parse_miz(miz_path):
     flights = []
     situation = ""
     blue_task = ""
+
+    caucasus_conf = {
+        "central_meridian": 33, 
+        "scale_factor": 0.9996, 
+        "false_easting": -99516.9999999732, 
+        "false_northing": -4998114.999999984
+    }
+
+    active_map(caucasus_conf)
 
     with zipfile.ZipFile(miz_path, 'r') as z:
         # ---- Parse mission file for flights ----
@@ -16,10 +29,12 @@ def parse_miz(miz_path):
             mission_text = mission_text[len("mission ="):].strip()
 
         mission_data = lua.decode(mission_text)
+        mission_epoch = parse_start_epoch(mission_data)
+
 
         map = mission_data.get('map')
-        center_x = map.get('centerX')
-        center_y = map.get('centerY')
+        center_x = map.get('centerY')
+        center_y = map.get('centerX')
         center_lat = 41 + 41.274 / 60     # 41.6879 approx
         center_lon = 41 + 26.656 / 60     # 41.4443 approx
 
@@ -69,48 +84,87 @@ def parse_miz(miz_path):
     return {
         "flights": flights,
         "situation": situation,
-        "blue_task": blue_task
+        "blue_task": blue_task,
+        "start_epoch": mission_epoch
     }
 
 
+def parse_start_epoch(mission_data):
+    """Extract start date+time from mission data and return as epoch (UTC)."""
+    date = mission_data.get("date", {})
+    start_seconds = mission_data.get("start_time", 0)
+
+    year = date.get("Year", 1970)
+    month = date.get("Month", 1)
+    day = date.get("Day", 1)
+
+    # Base date at midnight
+    dt = datetime.datetime(year, month, day, tzinfo=datetime.timezone.utc)
+
+    # Add seconds since midnight
+    dt = dt + datetime.timedelta(seconds=start_seconds)
+
+    # Convert to Unix epoch
+    epoch = calendar.timegm(dt.utctimetuple())
+    return epoch
+
+
+def distance_m(p1, p2):
+    dx = p2["x"] - p1["x"]
+    dy = p2["y"] - p1["y"]
+    return math.sqrt(dx**2 + dy**2)
+
+def heading_deg(wp1, wp2):
+    """
+    Compute heading from wp1 to wp2 in degrees.
+    Assumes wp1 and wp2 have 'lat' and 'lon' keys in decimal degrees.
+    Returns 0 = north, 90 = east, etc.
+    """
+    dx = wp2["lon"] - wp1["lon"]
+    dy = wp2["lat"] - wp1["lat"]
+
+    head = math.atan2(dx, dy) * 180 / math.pi
+    if head < 0:
+        head += 360
+
+    return head
+
 def extract_waypoints(group, center_x_m, center_y_m, center_lat, center_lon):
-    """
-    Returns a list of dicts for the waypoints with x/y/alt/speed.
-    """
     route = group.get("route", {})
-    points = route.get("points", [])
+    points = route.get("points", {})
 
     waypoints = []
+    prev_wp = None
 
-    for p in points.values():
-        
+    for i, key in enumerate(sorted(points.keys()), start=1):
+        p = points[key]
+        speed_mps = p.get("speed", 0)
+        alt_m = p.get("alt", 0)
+
         wp = {
+            "#": i,
+            "name": p.get("name", f"WP{i}"),
             "x": p.get("x"),
             "y": p.get("y"),
-            "name": p.get("name"),
-            "alt": p.get("alt", 0),
-            "speed": p.get("speed", 0),
-            "type": p.get("type", ""),
-            "action": p.get("action", "")
+            "speed": speed_mps * 1.94384,
+            "alt": round(alt_m * 3.28084),           # feet
+            "time": p.get("ETA")
         }
 
-        wp["lat"], wp["lon"] = meters_to_latlon(
-            wp["x"], wp["y"], center_x_m, center_y_m, center_lat, center_lon
-        )
+        # convert coords
+        wp["lat"], wp["lon"] = miz_to_ll(p.get("y"), p.get("x"))
+        # distance & heading from previous point
+        if prev_wp:
+            dist = distance_m(prev_wp, wp) / 1852  # nm
+            head = heading_deg(prev_wp, wp)
+        else:
+            dist = 0
+            head = 0
+
+        wp["dist"] = round(dist, 1)
+        wp["head"] = round(head)
 
         waypoints.append(wp)
+        prev_wp = wp
+
     return waypoints
-
-def meters_to_latlon(x, y, center_x_m, center_y_m, center_lat, center_lon):
-    """
-    Convert DCS x/y (meters) relative to map center to decimal degrees lat/lon.
-    """
-    dx = x - center_x_m  # east offset
-    dy = y - center_y_m  # north offset
-
-    meters_per_deg_lat = 111320
-    meters_per_deg_lon = 111320 * math.cos(math.radians(center_lat))
-
-    lat = center_lat + (dx / meters_per_deg_lat)
-    lon = center_lon + (dy / meters_per_deg_lon)
-    return lat, lon

@@ -1,0 +1,36 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+}
+
+.flight-item {
+    margin-bottom: 6px;
+}
+
+.preview {
+    border-top: 1px solid #ccc;
+    margin-top: 15px;
+    padding-top: 15px;
+}
+
+/* Map takes 2/3 of the screen width and 60% of screen height */
+.map {
+    width: 66vw;
+    height: 60vh;
+    margin-top: 10px;
+}
+
+table {
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+td, th {
+    border: 1px solid #999;
+    padding: 4px 8px;
+}
+
+.wp-label {
+    pointer-events: none; /* don't block map interaction */
+    text-align: center;
+}

@@ -1,2 +1,3 @@
 Flask>=2.3.0
 slpp>=0.3.2
+pyproj

@@ -4,14 +4,7 @@
     <title>Mission Flights</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .flight-item { margin-bottom: 6px; }
-        .preview { border-top: 1px solid #ccc; margin-top: 15px; padding-top: 15px; }
-        .map { width: 600px; height: 400px; margin-top: 10px; }
-        table { border-collapse: collapse; margin-top: 10px; }
-        td, th { border: 1px solid #999; padding: 4px 8px; }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <h1>Mission Briefing</h1>
@@ -37,6 +30,7 @@
 
 <script>
 const flights = {{ flights|tojson }};  // Make sure this includes lat/lon
+const start_epoch = {{ start_epoch }};
 let currentPreview = null;
 
 function showPreview(radio) {
@@ -68,23 +62,50 @@ function showPreview(radio) {
     // Waypoints table
     tableHtml += `<table class="waypoints">
         <thead>
-            <tr><th>WP</th><th>Lat</th><th>Lon</th><th>Alt</th><th>Speed</th></tr>
+            <tr>
+                <th>#</th>
+                <th>Desc</th>
+                <th>Time</th>
+                <th>Dist (nm)</th>
+                <th>Head (°)</th>
+                <th>Speed (kts)</th>
+                <th>Alt (ft)</th>
+            </tr>
         </thead>
         <tbody>
     `;
+
+    let prev = null;
+
     flight.waypoints.forEach((wp, i) => {
+        let dist = 0, time = 0;
+
+        if (prev) {
+            const speed_mps = wp.speed;                       // assuming from mission file in m/s
+            const speed_kmh = speed_mps * 3.6;
+        }
+
+        // Inside your waypoint table rendering:
+        const absEpoch = start_epoch + wp.time;  
+        const absTime = formatTime(absEpoch);
+
         tableHtml += `<tr>
-            <td>WP${i+1}</td>
-            <td>${wp.lat.toFixed(6)}</td>
-            <td>${wp.lon.toFixed(6)}</td>
-            <td>${wp.alt}</td>
-            <td>${wp.speed}</td>
+            <td>${i+1}</td>
+            <td>${wp.name || 'WP'+(i+1)}</td>
+            <td>${absTime}</td>
+            <td>${wp.dist ? wp.dist.toFixed(1) : '-'}</td>
+            <td>${wp.head ? wp.head.toFixed(0) : '-'}</td>
+            <td>${(wp.speed).toFixed(0)}</td>
+            <td>${(wp.alt * 3.281).toFixed(0)}</td>
         </tr>`;
+
+        prev = wp;
     });
+
     tableHtml += `</tbody></table>`;
 
     // Map div
-    tableHtml += `<div id="map${index}" class="map" style="height:400px;"></div>`;
+    tableHtml += `<div id="map${index}" class="map"></div>`;
 
     div.innerHTML = tableHtml;
     previewContainer.appendChild(div);
@@ -100,14 +121,68 @@ function showPreview(radio) {
         const coords = flight.waypoints.map(wp => [wp.lat, wp.lon]);
         const line = L.polyline(coords, {color: 'red'}).addTo(map);
         map.fitBounds(line.getBounds());
+    }
 
-        // Add markers
-        coords.forEach((c, i) => {
-            L.marker(c).addTo(map)
-             .bindPopup(`WP${i+1}: alt ${flight.waypoints[i].alt}, speed ${flight.waypoints[i].speed}`);
-        });
+    // After you draw the polyline:
+    if (flight.waypoints && flight.waypoints.length > 1) {
+        for (let i = 1; i < flight.waypoints.length; i++) {
+            const wp1 = flight.waypoints[i-1];
+            const wp2 = flight.waypoints[i];
+
+            const latlngs = [
+                [wp1.lat, wp1.lon],
+                [wp2.lat, wp2.lon]
+            ];
+
+            // Optional: draw segment polyline with color
+            L.polyline(latlngs, {color: 'blue'}).addTo(map);
+
+            // Compute midpoint for label
+            const midLat = (wp1.lat + wp2.lat) / 2;
+            const midLon = (wp1.lon + wp2.lon) / 2;
+
+            // Add label at midpoint
+            L.marker([midLat, midLon], {
+                icon: L.divIcon({
+                    className: 'segment-label',
+                    html: `<div style="font-weight:bold;color:black;text-align:center;">${wp2.dist.toFixed(1)}<br>${wp2.head.toFixed(0)}°</div>`,
+                    iconSize: [60, 30]
+                })
+            }).addTo(map);
+
+            // map.createPane('circles');
+            // map.getPane('circles').style.zIndex = 600;  // higher than default overlay (600)
+
+            // Draw a small circle at each waypoint
+            L.circle([wp1.lat, wp1.lon], {
+                radius: 750,           // meters
+                color: 'blue',
+                fillColor: 'blue',
+                fillOpacity: 1
+            }).addTo(map);
+
+            map.createPane('labels');
+            map.getPane('labels').style.zIndex = 650;  // higher than default overlay (600)
+
+            // Add number label
+            L.marker([wp2.lat, wp2.lon], {
+                icon: L.divIcon({
+                    className: 'wp-label',
+                    html: `<div style="font-weight:bold;color:white;text-align:center;">${i+1}</div>`,
+                    iconSize: [20, 20],         // size of the div
+                    iconAnchor: [10, 10]        // center of the div
+                }),
+                pane: 'labels'
+            }).addTo(map);
+        }
     }
 }
+
+function formatTime(epochSeconds) {
+    const date = new Date(epochSeconds * 1000);  // JS uses ms
+    return date.toISOString().substr(11, 8);     // "HH:MM:SS"
+}
+
 </script>
 </body>
 </html>

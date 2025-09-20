@@ -26,6 +26,7 @@ def upload():
     session["flights"] = data["flights"]
     session["situation"] = data["situation"]
     session["blue_task"] = data["blue_task"]
+    session["start_epoch"] = data["start_epoch"]
 
     return redirect("/select_flights")
 
@@ -35,11 +36,13 @@ def select_flights():
     flights = session.get("flights", [])
     situation = session.get("situation", "")
     blue_task = session.get("blue_task", "")
+    start_epoch = session.get("start_epoch")
     return render_template(
         "select.html",
         flights=flights,
         situation=situation,
-        blue_task=blue_task
+        blue_task=blue_task,
+        start_epoch = start_epoch
     )
 
 
@@ -83,13 +86,6 @@ def flight_detail(flight_id):
     flight = next((f for f in flights if f["group_name"] == flight_id), None)
     if not flight:
         return "Flight not found", 404
-
-    # temporary dummy waypoints until we parse real ones
-    flight["waypoints"] = [
-        {"name": "WP1", "lat": 36.123, "lon": -115.123, "alt": 7620, "speed": 220},
-        {"name": "WP2", "lat": 36.133, "lon": -115.133, "alt": 7620, "speed": 220},
-        {"name": "WP3", "lat": 36.143, "lon": -115.143, "alt": 7620, "speed": 220},
-    ]
 
     return render_template("flight.html", flight=flight)
 
