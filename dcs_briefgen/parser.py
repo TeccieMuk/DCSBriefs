@@ -78,7 +78,7 @@ def parse_miz(miz_path):
                     "type": u.get('type', 'Unknown'),
                     "waypoints": extract_waypoints(g, center_x, center_y, center_lat, center_lon),
                     "radios": channels,
-                    "frequency": u.get('frequency', 'Unknown'),
+                    "frequency": g.get('frequency', 'Unknown'),
                     "is_awacs": g.get('task', 'Unknown') == "AWACS"
                 })
 

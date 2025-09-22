@@ -36,197 +36,204 @@ let bullseye_latlon = L.latLng(bullseye.lat, bullseye.lon)
 let currentPreview = null;
 const maxRangeNm = 100;
 const nmToMeters = 1852;
+// =====================
+// Format absolute time
+// =====================
+function formatTime(epochSeconds) {
+    const date = new Date(epochSeconds * 1000);
+    return date.toISOString().substr(11, 8); // HH:MM:SS
+}
 
-function showPreview(radio) {
-    const index = parseInt(radio.dataset.index);
-    const flight = flights[index];
-    const previewContainer = document.getElementById("previews");
-
-    // Remove previous preview
-    if (currentPreview) {
-        currentPreview.remove();
-        currentPreview = null;
-    }
-
-    // Create new preview div
-    const div = document.createElement("div");
-    div.id = "preview" + index;
-    div.className = "preview";
-    currentPreview = div;
-
-    // Flight info table
-    let tableHtml = `
-    <table class="flight-info">
-        <tr><th>Callsign</th><td>${flight.callsign}</td></tr>
-        <tr><th>Type</th><td>${flight.type}</td></tr>
-        <tr><th>Waypoints</th><td>${flight.waypoints.length}</td></tr>
-    </table>
-    `;
-
-    // Waypoints table
-    tableHtml += `<table class="waypoints">
+// =====================
+// Waypoint Table
+// =====================
+function createWaypointTable(flight) {
+    let tableHtml = `<table class="waypoints">
         <thead>
             <tr>
-                <th>#</th>
-                <th>Desc</th>
-                <th>Time</th>
-                <th>Dist (nm)</th>
-                <th>Head (°)</th>
-                <th>Speed (kts)</th>
-                <th>Alt (ft)</th>
+                <th>#</th><th>Desc</th><th>Time</th>
+                <th>Dist (nm)</th><th>Head (°)</th><th>Speed</th><th>Alt</th>
             </tr>
-        </thead>
-        <tbody>
-    `;
+        </thead><tbody>`;
 
     let prev = null;
-
     flight.waypoints.forEach((wp, i) => {
-        let dist = 0, time = 0;
-
+        let dist = 0, head = 0;
         if (prev) {
-            const speed_mps = wp.speed;                       // assuming from mission file in m/s
-            const speed_kmh = speed_mps * 3.6;
+            const dx = wp.lon - prev.lon;
+            const dy = wp.lat - prev.lat;
+            dist = Math.sqrt(dx*dx + dy*dy) * 60; // rough nm
+            head = Math.atan2(dx, dy) * 180 / Math.PI;
+            if (head < 0) head += 360;
         }
-
-        // Inside your waypoint table rendering:
-        const absEpoch = start_epoch + wp.time;  
+        const absEpoch = start_epoch + wp.time;
         const absTime = formatTime(absEpoch);
 
         tableHtml += `<tr>
             <td>${i+1}</td>
             <td>${wp.name || 'WP'+(i+1)}</td>
             <td>${absTime}</td>
-            <td>${wp.dist ? wp.dist.toFixed(1) : '-'}</td>
-            <td>${wp.head ? wp.head.toFixed(0) : '-'}</td>
-            <td>${(wp.speed).toFixed(0)}</td>
-            <td>${(wp.alt * 3.281).toFixed(0)}</td>
+            <td>${dist.toFixed(1)}</td>
+            <td>${head.toFixed(0)}</td>
+            <td>${wp.speed.toFixed(0)}</td>
+            <td>${wp.alt.toFixed(0)}</td>
         </tr>`;
 
         prev = wp;
     });
 
     tableHtml += `</tbody></table>`;
+    return tableHtml;
+}
 
-    // Map div
-    tableHtml += `<div id="map${index}" class="map"></div>`;
-
-    div.innerHTML = tableHtml;
-    previewContainer.appendChild(div);
-
-    // Initialize map
-    const map = L.map("map" + index).setView([flight.waypoints[0].lat, flight.waypoints[0].lon], 6);
+// =====================
+// Flight Map
+// =====================
+function createFlightMap(flight, mapId) {
+    const map = L.map(mapId).setView([flight.waypoints[0].lat, flight.waypoints[0].lon], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: 'Map data © OpenStreetMap contributors'
     }).addTo(map);
 
-    // Draw flight path polyline
-    if (flight.waypoints && flight.waypoints.length > 0) {
-        const coords = flight.waypoints.map(wp => [wp.lat, wp.lon]);
-        const line = L.polyline(coords, {color: 'red'}).addTo(map);
-        map.fitBounds(line.getBounds());
-    }
+    // Draw flight path
+    const coords = flight.waypoints.map(wp => [wp.lat, wp.lon]);
+    L.polyline(coords, {color: 'red'}).addTo(map);
 
-    // After you draw the polyline:
-    if (flight.waypoints && flight.waypoints.length > 1) {
-        for (let i = 1; i < flight.waypoints.length; i++) {
-            const wp1 = flight.waypoints[i-1];
-            const wp2 = flight.waypoints[i];
+    // Draw segments, midpoint labels, waypoint circles & numbers
+    map.createPane('labels');  // for waypoint number labels
+    map.getPane('labels').style.zIndex = 650;
 
-            const latlngs = [
-                [wp1.lat, wp1.lon],
-                [wp2.lat, wp2.lon]
-            ];
+    for (let i = 1; i < flight.waypoints.length; i++) {
+        const wp1 = flight.waypoints[i-1];
+        const wp2 = flight.waypoints[i];
+        const latlngs = [[wp1.lat, wp1.lon],[wp2.lat, wp2.lon]];
+        L.polyline(latlngs, {color: 'blue'}).addTo(map);
 
-            // Optional: draw segment polyline with color
-            L.polyline(latlngs, {color: 'blue'}).addTo(map);
-
-            // Compute midpoint for label
-            const midLat = (wp1.lat + wp2.lat) / 2;
-            const midLon = (wp1.lon + wp2.lon) / 2;
-
-            // Add label at midpoint
-            L.marker([midLat, midLon], {
-                icon: L.divIcon({
-                    className: 'segment-label',
-                    html: `<div style="font-weight:bold;color:black;text-align:center;">${wp2.dist.toFixed(1)}<br>${wp2.head.toFixed(0)}°</div>`,
-                    iconSize: [60, 30]
-                })
-            }).addTo(map);
-
-            // Draw a small circle at each waypoint
-            L.circle([wp1.lat, wp1.lon], {
-                radius: 750,           // meters
-                color: 'blue',
-                fillColor: 'blue',
-                fillOpacity: 1
-            }).addTo(map);
-
-            map.createPane('labels');
-            map.getPane('labels').style.zIndex = 650;  // higher than default overlay (600)
-
-            // Add number label
-            L.marker([wp2.lat, wp2.lon], {
-                icon: L.divIcon({
-                    className: 'wp-label',
-                    html: `<div style="font-weight:bold;color:white;text-align:center;">${i+1}</div>`,
-                    iconSize: [20, 20],         // size of the div
-                    iconAnchor: [10, 10]        // center of the div
-                }),
-                pane: 'labels'
-            }).addTo(map);
-        }
-    }
-
-    // range rings
-    for (let r = 20; r <= 120; r += 20) {
-        // draw circle
-        L.circle(bullseye_latlon, {
-            radius: r * nmToMeters,
-            color: "red",
-            fill: false,
-            dashArray: "4,4"
-        }).addTo(map);
-
-        // compute label position along the north radial (bearing = 0°)
-        const labelPoint = computeDestinationPoint(
-            bullseye_latlon,
-            r,
-            0 // north
-        );
-
-        // add label marker
-        L.marker(labelPoint, {
+        // midpoint label
+        const midLat = (wp1.lat + wp2.lat)/2;
+        const midLon = (wp1.lon + wp2.lon)/2;
+        L.marker([midLat, midLon], {
             icon: L.divIcon({
-                className: "range-label",
-                html: `<div style="color:red; font-size:12px; font-weight:bold;">${r}</div>`,
-                iconSize: [20, 20],
-                iconAnchor: [10, 10]
+                className: 'segment-label',
+                html: `<div style="font-weight:bold;color:black;text-align:center;">${wp2.dist.toFixed(1)}<br>${wp2.head.toFixed(0)}°</div>`,
+                iconSize: [60,30]
             })
         }).addTo(map);
-    }
 
-    //radial lines every 45°
-    for (let angle = 0; angle < 360; angle += 45) {
-        const dest = computeDestinationPoint(
-            bullseye_latlon,
-            120, // max range in nm
-            angle
-        );
-        L.polyline([ bullseye_latlon, dest ], {
-            color: 'red',
-            weight: 1,
-            dashArray: '2,6'
+        // circles & numbers
+        L.circle([wp1.lat, wp1.lon], {radius:750, color:'blue', fillColor:'blue', fillOpacity:1}).addTo(map);
+        L.marker([wp2.lat, wp2.lon], {
+            icon: L.divIcon({
+                className:'wp-label',
+                html:`<div style="font-weight:bold;color:white;text-align:center;">${i+1}</div>`,
+                iconSize:[20,20], iconAnchor:[10,10]
+            }),
+            pane:'labels'
         }).addTo(map);
     }
+
+    // Bullseye range rings & radials
+    const maxRange = 120;
+    for (let r=20; r<=maxRange; r+=20) {
+        L.circle(bullseye_latlon, {radius:r*nmToMeters,color:'red',fill:false,dashArray:'4,4'}).addTo(map);
+        // label north radial
+        const labelPoint = computeDestinationPoint(bullseye_latlon, r, 0);
+        L.marker(labelPoint, {icon:L.divIcon({className:'range-label', html:`<div style="color:red;font-size:12px;font-weight:bold;">${r}</div>`, iconSize:[20,20], iconAnchor:[10,10]})}).addTo(map);
+    }
+    for(let angle=0;angle<360;angle+=45){
+        const dest = computeDestinationPoint(bullseye_latlon, maxRange, angle);
+        L.polyline([bullseye_latlon,dest],{color:'red',weight:1,dashArray:'2,6'}).addTo(map);
+    }
+
+    return map;
 }
 
-function formatTime(epochSeconds) {
-    const date = new Date(epochSeconds * 1000);  // JS uses ms
-    return date.toISOString().substr(11, 8);     // "HH:MM:SS"
+// =====================
+// Radio Table
+// =====================
+
+function renderCommLadder(flight, allFlights) {
+    // Collect radios for header
+    const radios = flight.radios || [];
+    const numRadios = radios.length;
+
+    console.log(flight)
+    console.log(flight.radios);
+    console.log(flight.frequency);
+    console.log(allFlights)
+
+    // Build table header dynamically
+    let tableHtml = `<table class="comm-ladder">
+        <thead>
+            <tr>
+                <th>Agency</th>
+                <th>Callsign</th>`;
+
+    for (let i = 0; i < numRadios; i++) {
+        tableHtml += `<th>Radio ${i+1}</th>`;
+    }
+
+    tableHtml += `<th>TACAN</th></tr></thead><tbody>`;
+
+    // Helper to get channel matching flight frequency
+    function matchingChannel(radio, freq) {
+        if (!radio.channels) return '';
+        for (let i = 0; i < radio.channels.length; i++) {
+            const ch = radio.channels[i];
+            if (ch === freq) return `${freq.toFixed(3)} [${i+1}]`;
+        }
+        return '';
+    }
+
+    // Rows
+    // 1) Intra-Flight
+    tableHtml += `<tr>
+        <td>Intra-Flight</td>
+        <td>${flight.callsign}</td>`;
+    radios.forEach(radio => {
+        tableHtml += `<td>${matchingChannel(radio, flight.frequency)}</td>`;
+    });
+    tableHtml += `<td>-</td></tr>`;
+
+    // 2) Tactical (AWACS)
+    const awacsFlight = allFlights.find(f => f.is_awacs);
+    if (awacsFlight) {
+        tableHtml += `<tr>
+            <td>Tactical</td>
+            <td>${awacsFlight.callsign}</td>`;
+        radios.forEach(radio => {
+            tableHtml += `<td>${matchingChannel(radio, awacsFlight.frequency)}</td>`;
+        });
+        // Fill empty cells if number of radios differs
+        for (let i = awacsFlight.radios.length; i < numRadios; i++) tableHtml += `<td></td>`;
+        tableHtml += `<td>-</td></tr>`;
+    }
+
+    // 3) Tanker
+    const tankerFlight = allFlights.find(f => f.is_tanker);
+    if (tankerFlight) {
+        tableHtml += `<tr>
+            <td>Tanker</td>
+            <td>${tankerFlight.callsign}</td>`;
+        radios.forEach(radio => {
+            tableHtml += `<td>${matchingChannel(radio, tankerFlight.frequency)}</td>`;
+        });
+        for (let i = tankerFlight.radios.length; i < numRadios; i++) tableHtml += `<td></td>`;
+        tableHtml += `<td>-</td></tr>`;
+    }
+
+    // 4) ATC (optional, not implemented yet)
+    // ...
+
+    tableHtml += `</tbody></table>`;
+
+    return tableHtml;
 }
 
-// helper: compute destination point given start, distance (nm), bearing (deg)
+
+// =====================
+// Util
+// =====================
 function computeDestinationPoint(latlng, distanceNm, bearingDeg) {
     const lat = latlng.lat;
     const lon = latlng.lng;
@@ -249,6 +256,27 @@ function computeDestinationPoint(latlng, distanceNm, bearingDeg) {
     return [φ2 * 180 / Math.PI, λ2 * 180 / Math.PI];
 }
 
+// =====================
+// Show Preview
+// =====================
+function showPreview(radioInput){
+    const index = parseInt(radioInput.dataset.index);
+    const flight = flights[index];
+    const container = document.getElementById("previews");
+
+    if(currentPreview) { currentPreview.remove(); currentPreview=null; }
+
+    const div = document.createElement('div'); div.className='preview';
+    div.innerHTML = `
+        <h3>Waypoints</h3>${createWaypointTable(flight)}
+        <h3>Map</h3><div id="map${index}" class="map" style="height:400px;"></div>
+        <h3>Radios</h3>${renderCommLadder(flight, flights)}
+    `;
+    container.appendChild(div);
+    currentPreview = div;
+
+    createFlightMap(flight, `map${index}`);
+}
 </script>
 </body>
 </html>
