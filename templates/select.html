@@ -10,10 +10,10 @@
     <h1>Mission Briefing</h1>
 
     <h2>Situation</h2>
-    <p>{{ situation }}</p>
+    <p>{{ situation | replace('\n', '<br>') | safe }}</p>
 
     <h2>Blue Task</h2>
-    <p>{{ blue_task }}</p>
+    <p>{{ blue_task | replace('\n', '<br>') | safe }}</p>
 
 <h2>Flights</h2>
 <div id="flightList">
@@ -31,7 +31,11 @@
 <script>
 const flights = {{ flights|tojson }};  // Make sure this includes lat/lon
 const start_epoch = {{ start_epoch }};
+const bullseye = {{ blue_bullseye|tojson|safe }};
+let bullseye_latlon = L.latLng(bullseye.lat, bullseye.lon)
 let currentPreview = null;
+const maxRangeNm = 100;
+const nmToMeters = 1852;
 
 function showPreview(radio) {
     const index = parseInt(radio.dataset.index);
@@ -150,9 +154,6 @@ function showPreview(radio) {
                 })
             }).addTo(map);
 
-            // map.createPane('circles');
-            // map.getPane('circles').style.zIndex = 600;  // higher than default overlay (600)
-
             // Draw a small circle at each waypoint
             L.circle([wp1.lat, wp1.lon], {
                 radius: 750,           // meters
@@ -176,11 +177,76 @@ function showPreview(radio) {
             }).addTo(map);
         }
     }
+
+    // range rings
+    for (let r = 20; r <= 120; r += 20) {
+        // draw circle
+        L.circle(bullseye_latlon, {
+            radius: r * nmToMeters,
+            color: "red",
+            fill: false,
+            dashArray: "4,4"
+        }).addTo(map);
+
+        // compute label position along the north radial (bearing = 0°)
+        const labelPoint = computeDestinationPoint(
+            bullseye_latlon,
+            r,
+            0 // north
+        );
+
+        // add label marker
+        L.marker(labelPoint, {
+            icon: L.divIcon({
+                className: "range-label",
+                html: `<div style="color:red; font-size:12px; font-weight:bold;">${r}</div>`,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
+            })
+        }).addTo(map);
+    }
+
+    //radial lines every 45°
+    for (let angle = 0; angle < 360; angle += 45) {
+        const dest = computeDestinationPoint(
+            bullseye_latlon,
+            120, // max range in nm
+            angle
+        );
+        L.polyline([ bullseye_latlon, dest ], {
+            color: 'red',
+            weight: 1,
+            dashArray: '2,6'
+        }).addTo(map);
+    }
 }
 
 function formatTime(epochSeconds) {
     const date = new Date(epochSeconds * 1000);  // JS uses ms
     return date.toISOString().substr(11, 8);     // "HH:MM:SS"
+}
+
+// helper: compute destination point given start, distance (nm), bearing (deg)
+function computeDestinationPoint(latlng, distanceNm, bearingDeg) {
+    const lat = latlng.lat;
+    const lon = latlng.lng;
+    const R = 6371e3; // earth radius in meters
+    const dist = distanceNm * 1852; // convert nm → m
+    const brng = bearingDeg * Math.PI / 180;
+
+    const φ1 = lat * Math.PI / 180;
+    const λ1 = lon * Math.PI / 180;
+
+    const φ2 = Math.asin(
+        Math.sin(φ1) * Math.cos(dist / R) +
+        Math.cos(φ1) * Math.sin(dist / R) * Math.cos(brng)
+    );
+    const λ2 = λ1 + Math.atan2(
+        Math.sin(brng) * Math.sin(dist / R) * Math.cos(φ1),
+        Math.cos(dist / R) - Math.sin(φ1) * Math.sin(φ2)
+    );
+
+    return [φ2 * 180 / Math.PI, λ2 * 180 / Math.PI];
 }
 
 </script>

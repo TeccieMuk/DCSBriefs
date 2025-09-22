@@ -27,6 +27,7 @@ def upload():
     session["situation"] = data["situation"]
     session["blue_task"] = data["blue_task"]
     session["start_epoch"] = data["start_epoch"]
+    session["blue_bullseye"] = data["blue_bullseye"]
 
     return redirect("/select_flights")
 
@@ -37,12 +38,14 @@ def select_flights():
     situation = session.get("situation", "")
     blue_task = session.get("blue_task", "")
     start_epoch = session.get("start_epoch")
+    blue_bullseye = session.get("blue_bullseye")
     return render_template(
         "select.html",
         flights=flights,
         situation=situation,
         blue_task=blue_task,
-        start_epoch = start_epoch
+        start_epoch = start_epoch,
+        blue_bullseye = blue_bullseye
     )
 
 
@@ -53,6 +56,7 @@ def generate():
     flights = session.get('flights')
     situation = session.get('situation', "")
     blue_task = session.get('blue_task', "")
+    blue_bullseye = session
 
     out_dir = tempfile.mkdtemp()
     zip_path = os.path.join(out_dir, 'briefing.zip')

@@ -39,6 +39,17 @@ def parse_miz(miz_path):
         center_lon = 41 + 26.656 / 60     # 41.4443 approx
 
         blue = mission_data.get('coalition', {}).get('blue', {})
+
+        bullseye_miz = blue.get("bullseye", {})
+        bullseye = {'lat': 0, 'lon': 0}
+        if bullseye_miz:
+            y = bullseye_miz.get("y")
+            x = bullseye_miz.get("x")
+            # convert to lat/lon
+            lat, lon = miz_to_ll(y, x)
+            bullseye['lat'] = lat
+            bullseye['lon'] = lon
+
         countries = blue.get('country', [])
         if isinstance(countries, dict):
             countries = list(countries.values())
@@ -55,12 +66,20 @@ def parse_miz(miz_path):
 
                 # Use just the first unit to get aircraft type
                 u = units[0] if units else {}
+
+                channels = []
+                if u:
+                    channels = extract_radio_channels(u)
+
                 flights.append({
                     "group_name": g.get('name', 'Unknown'),
                     "unit_name": u.get('name', 'Unknown'),
                     "callsign": u.get('callsign', {}).get('name', 'Unknown'),  # optional callsign
                     "type": u.get('type', 'Unknown'),
-                    "waypoints": extract_waypoints(g, center_x, center_y, center_lat, center_lon)
+                    "waypoints": extract_waypoints(g, center_x, center_y, center_lat, center_lon),
+                    "radios": channels,
+                    "frequency": u.get('frequency', 'Unknown'),
+                    "is_awacs": g.get('task', 'Unknown') == "AWACS"
                 })
 
         # ---- Parse l10n/DEFAULT/dictionary for briefing text ----
@@ -85,7 +104,8 @@ def parse_miz(miz_path):
         "flights": flights,
         "situation": situation,
         "blue_task": blue_task,
-        "start_epoch": mission_epoch
+        "start_epoch": mission_epoch,
+        "blue_bullseye": bullseye
     }
 
 
@@ -168,3 +188,18 @@ def extract_waypoints(group, center_x_m, center_y_m, center_lat, center_lon):
         prev_wp = wp
 
     return waypoints
+
+def extract_radio_channels(unit):
+    radios = unit.get("Radio", {})
+    all_channels = []
+
+    for radio_id, radio_data in radios.items():
+        channels = radio_data.get("channels", {})
+        # Collect all channels as a sorted list of (index, value) tuples
+        channels_list = sorted(channels.items())
+        all_channels.append({
+            "radio_id": radio_id,
+            "channels": [ch for idx, ch in channels_list]
+        })
+
+    return all_channels
