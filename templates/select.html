@@ -21,7 +21,7 @@
     <div class="flight-item">
         <input type="radio" name="flightSelect" id="flight{{ loop.index0 }}" 
                data-index="{{ loop.index0 }}" onchange="showPreview(this)">
-        <label for="flight{{ loop.index0 }}">{{ flight.callsign }} ({{ flight.type }})</label>
+        <label for="flight{{ loop.index0 }}">{{ flight.group_name }} ({{ flight.units[0].type }})</label>
     </div>
     {% endfor %}
 </div>
@@ -34,6 +34,7 @@ const start_epoch = data.start_epoch;
 let currentPreview = null;
 const maxRangeNm = 100;
 const nmToMeters = 1852;
+console.log(data)
 
 // =====================
 // Format absolute time
@@ -153,7 +154,7 @@ function createFlightMap(flight, bullseye_latlon, mapId) {
 
 function renderCommLadder(flight, allFlights) {
     // Collect radios for header
-    const radios = flight.radios || [];
+    const radios = flight.units[0].radios || [];
     const numRadios = radios.length;
 
     console.log(flight)
@@ -188,36 +189,39 @@ function renderCommLadder(flight, allFlights) {
     // 1) Intra-Flight
     tableHtml += `<tr>
         <td>Intra-Flight</td>
-        <td>${flight.callsign}</td>`;
+        <td>${flight.group_name}</td>`;
     radios.forEach(radio => {
         tableHtml += `<td>${matchingChannel(radio, flight.frequency)}</td>`;
     });
     tableHtml += `<td>-</td></tr>`;
 
-    // 2) Tactical (AWACS)
+    // 2) ATC (optional, not implemented yet)
+    // ...
+
+    // 3) Tactical (AWACS)
     const awacsFlight = allFlights.find(f => f.is_awacs);
     if (awacsFlight) {
         tableHtml += `<tr>
             <td>Tactical</td>
-            <td>${awacsFlight.callsign}</td>`;
+            <td>${awacsFlight.group_name}</td>`;
         radios.forEach(radio => {
             tableHtml += `<td>${matchingChannel(radio, awacsFlight.frequency)}</td>`;
         });
         // Fill empty cells if number of radios differs
-        for (let i = awacsFlight.radios.length; i < numRadios; i++) tableHtml += `<td></td>`;
-        tableHtml += `<td>-</td></tr>`;
+        for (let i = awacsFlight.units[0].radios.length; i < numRadios; i++) tableHtml += `<td></td>`;
+        tableHtml += `</tr>`;
     }
 
-    // 3) Tanker
+    // 4) Tanker
     const tankerFlight = allFlights.find(f => f.is_tanker);
     if (tankerFlight) {
         tableHtml += `<tr>
             <td>Tanker</td>
-            <td>${tankerFlight.callsign}</td>`;
+            <td>${tankerFlight.group_name}</td>`;
         radios.forEach(radio => {
             tableHtml += `<td>${matchingChannel(radio, tankerFlight.frequency)}</td>`;
         });
-        for (let i = tankerFlight.radios.length; i < numRadios; i++) tableHtml += `<td></td>`;
+        for (let i = tankerFlight.units[0].radios.length; i < numRadios; i++) tableHtml += `<td></td>`;
         tableHtml += `<td>-</td></tr>`;
     }
 

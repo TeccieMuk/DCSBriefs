@@ -89,30 +89,37 @@ def parse_coalition(coalition, center_x, center_y, center_lat, center_lon):
         for g in groups:
             units = g.get('units', [])
             if isinstance(units, dict):
-                units = list(units.values())
+                units = parse_units(list(units.values()))
 
-            # Use just the first unit to get aircraft type
-            u = units[0] if units else {}
-
-            channels = []
-            if u:
-                channels = extract_radio_channels(u)
-
-            flights.append({
+            flight = {
                 "group_name": g.get('name', 'Unknown'),
-                "unit_name": u.get('name', 'Unknown'),
-                "callsign": u.get('callsign', {}).get('name', 'Unknown'),  # optional callsign
-                "type": u.get('type', 'Unknown'),
-                "waypoints": extract_waypoints(g, center_x, center_y, center_lat, center_lon),
-                "radios": channels,
                 "frequency": g.get('frequency', 'Unknown'),
-                "is_awacs": g.get('task', 'Unknown') == "AWACS"
-            })
+                "is_awacs": g.get('task', 'Unknown') == "AWACS",
+                "is_tanker": g.get('task', 'Unknown') == "Refueling",
+                "units": units,
+                "tacan_channels": []
+            }
+            waypoints = extract_waypoints(g)
+            flight["waypoints"] = waypoints
+
+            flights.append(flight)
     return {
         "flights": flights,
         "task": "TASK",
         "bullseye": bullseye
     }
+
+
+def parse_units(units_raw):
+    units = []
+    for u in units_raw:
+        units.append({
+            "type": u.get('type', 'Unknown'),
+            "radios": extract_radio_channels(u),
+            "unit_id": u.get('unitId')
+        })
+    return units
+
 
 
 def parse_start_epoch(mission_data):
@@ -155,7 +162,7 @@ def heading_deg(wp1, wp2):
 
     return head
 
-def extract_waypoints(group, center_x_m, center_y_m, center_lat, center_lon):
+def extract_waypoints(group):
     route = group.get("route", {})
     points = route.get("points", {})
 
@@ -177,6 +184,12 @@ def extract_waypoints(group, center_x_m, center_y_m, center_lat, center_lon):
             "time": p.get("ETA")
         }
 
+        # Check take-off group
+        if i==1 and wp["alt"] == 0:
+            linked_unit = p.get("linkUnit", None)
+            if linked_unit:
+                group["linked_takeoff_unit"] = linked_unit
+
         # convert coords
         wp["lat"], wp["lon"] = miz_to_ll(p.get("y"), p.get("x"))
         # distance & heading from previous point
@@ -189,10 +202,13 @@ def extract_waypoints(group, center_x_m, center_y_m, center_lat, center_lon):
 
         wp["dist"] = round(dist, 1)
         wp["head"] = round(head)
-        channel, mode = extract_tacan_info(wp)
+        channel, mode, unit_id = extract_tacan_info(wp)
         if channel:
-            group["tacan_channel"] = channel
-            group["tacan_mode"] = mode
+            group["tacan_channels"].append({
+            "channel": channel,
+            "mode": mode,
+            "unit_id": unit_id
+        })
 
         waypoints.append(wp)
         prev_wp = wp
@@ -207,7 +223,7 @@ def extract_tacan_info(waypoint):
     try:
         task = waypoint.get("task", {})
         if task.get("id") != "ComboTask":
-            return None, None
+            return None, None, None
 
         tasks = task.get("params", {}).get("tasks", [])
         for t in tasks:
@@ -217,10 +233,11 @@ def extract_tacan_info(waypoint):
                     params = action.get("params", {})
                     channel = params.get("channel")
                     mode = params.get("modeChannel")
-                    return channel, mode
+                    unit_id = params.get("unitId")
+                    return channel, mode, unit_id
     except Exception:
         pass
-    return None, None
+    return None, None, None
 
 def extract_radio_channels(unit):
     radios = unit.get("Radio", {})
