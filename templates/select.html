@@ -154,91 +154,48 @@ function createFlightMap(flight, bullseye_latlon, mapId) {
 // =====================
 
 function renderCommLadder(flight, allFlights) {
-    // Collect radios for header
-    const radios = flight.units[0].radios || [];
-    const numRadios = radios.length;
+    const mainRadios = flight.units[0].radios || [];
+    const numRadios = mainRadios.length;
 
-    console.log(flight)
-    console.log(flight.radios);
-    console.log(flight.frequency);
-    console.log(allFlights)
-
-    // Build table header dynamically
     let tableHtml = `<table class="comm-ladder">
         <thead>
             <tr>
                 <th>Agency</th>
                 <th>Callsign</th>`;
-
     for (let i = 0; i < numRadios; i++) {
         tableHtml += `<th>Radio ${i+1}</th>`;
     }
-
     tableHtml += `<th>TACAN</th></tr></thead><tbody>`;
 
-    // Helper to get channel matching flight frequency
     function matchingChannel(radio, freq) {
-        if (!radio.channels) return '';
-        for (let i = 0; i < radio.channels.length; i++) {
-            const ch = radio.channels[i];
-            if (ch === freq) return `${freq.toFixed(3)} [${i+1}]`;
+        if (!radio || !radio.channels) return '';
+        const idx = radio.channels.findIndex(c => c === freq);
+        return idx !== -1 ? `${freq.toFixed(3)} [${idx+1}]` : '';
+    }
+
+    function renderFlightRow(main_flight, rowFlight, label) {
+        let row = `<tr><td>${label}</td><td>${rowFlight.group_name}</td>`;
+        for (let i = 0; i < numRadios; i++) {
+            const radio = main_flight.units[0].radios?.[i];
+            row += `<td>${matchingChannel(radio, rowFlight.frequency)}</td>`;
         }
-        return '';
+        row += `<td>${rowFlight.tacan_channels?.map(tc => tc.channel + tc.mode).join(', ') || '-'}</td>`;
+        row += `</tr>`;
+        return row;
     }
 
-    // Helper to format TACAN channels
-    function formatTacan(flight) {
-        if (!flight.tacan_channels || flight.tacan_channels.length === 0) return '-';
+    tableHtml += renderFlightRow(flight, flight, 'Intra-Flight');
 
-        let channel = flight.tacan_channels[0]
-        return `${channel.channel}${channel.mode}`;
-        //return flight.tacan_channels.map(t => `${t.channel} (${t.identifier || '??'})`).join(', ');
-
-    }
-
-    // Rows
-    // 1) Intra-Flight
-    tableHtml += `<tr>
-        <td>Intra-Flight</td>
-        <td>${flight.group_name}</td>`;
-    radios.forEach(radio => {
-        tableHtml += `<td>${matchingChannel(radio, flight.frequency)}</td>`;
-    });
-    tableHtml += `<td>-</td></tr>`;
-
-    // 2) ATC (optional, not implemented yet)
-    // ...
-
-    // 3) Tactical (AWACS)
     const awacsFlight = allFlights.find(f => f.is_awacs);
-    if (awacsFlight) {
-        tableHtml += `<tr>
-            <td>Tactical</td>
-            <td>${awacsFlight.group_name}</td>`;
-        radios.forEach(radio => {
-            tableHtml += `<td>${matchingChannel(radio, awacsFlight.frequency)}</td>`;
-        });
-        // Fill empty cells if number of radios differs
-        for (let i = awacsFlight.units[0].radios.length; i < numRadios; i++) tableHtml += `<td></td>`;
-        tableHtml += `</tr>`;
-    }
+    if (awacsFlight) tableHtml += renderFlightRow(flight, awacsFlight, 'Tactical');
 
     const tankerFlight = allFlights.find(f => f.is_tanker);
-    if (tankerFlight) {
-        tableHtml += `<tr>
-            <td>Tanker</td>
-            <td>${tankerFlight.group_name}</td>`;
-        radios.forEach(radio => {
-            tableHtml += `<td>${matchingChannel(radio, tankerFlight.frequency)}</td>`;
-        });
-        for (let i = tankerFlight.units[0].radios.length; i < numRadios; i++) tableHtml += `<td></td>`;
-        tableHtml += `<td>${formatTacan(tankerFlight)}</td></tr>`;
-    }
+    if (tankerFlight) tableHtml += renderFlightRow(flight, tankerFlight, 'Tanker');
 
     tableHtml += `</tbody></table>`;
-
     return tableHtml;
 }
+
 
 
 // =====================
