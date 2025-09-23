@@ -10,14 +10,14 @@
     <h1>Mission Briefing</h1>
 
     <h2>Situation</h2>
-    <p>{{ situation | replace('\n', '<br>') | safe }}</p>
+    <p>{{ data.situation | replace('\n', '<br>') | safe }}</p>
 
     <h2>Blue Task</h2>
-    <p>{{ blue_task | replace('\n', '<br>') | safe }}</p>
+    <p>{{ data.blue_coalition.task | replace('\n', '<br>') | safe }}</p>
 
 <h2>Flights</h2>
 <div id="flightList">
-    {% for flight in flights %}
+    {% for flight in data.blue_coalition.flights %}
     <div class="flight-item">
         <input type="radio" name="flightSelect" id="flight{{ loop.index0 }}" 
                data-index="{{ loop.index0 }}" onchange="showPreview(this)">
@@ -29,13 +29,12 @@
 <div id="previews"></div>
 
 <script>
-const flights = {{ flights|tojson }};  // Make sure this includes lat/lon
-const start_epoch = {{ start_epoch }};
-const bullseye = {{ blue_bullseye|tojson|safe }};
-let bullseye_latlon = L.latLng(bullseye.lat, bullseye.lon)
+const data = {{ data|tojson }};  // Make sure this includes lat/lon
+const start_epoch = data.start_epoch;
 let currentPreview = null;
 const maxRangeNm = 100;
 const nmToMeters = 1852;
+
 // =====================
 // Format absolute time
 // =====================
@@ -89,7 +88,7 @@ function createWaypointTable(flight) {
 // =====================
 // Flight Map
 // =====================
-function createFlightMap(flight, mapId) {
+function createFlightMap(flight, bullseye_latlon, mapId) {
     const map = L.map(mapId).setView([flight.waypoints[0].lat, flight.waypoints[0].lon], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: 'Map data © OpenStreetMap contributors'
@@ -133,7 +132,7 @@ function createFlightMap(flight, mapId) {
     }
 
     // Bullseye range rings & radials
-    const maxRange = 120;
+    const maxRange = 100;
     for (let r=20; r<=maxRange; r+=20) {
         L.circle(bullseye_latlon, {radius:r*nmToMeters,color:'red',fill:false,dashArray:'4,4'}).addTo(map);
         // label north radial
@@ -260,6 +259,7 @@ function computeDestinationPoint(latlng, distanceNm, bearingDeg) {
 // Show Preview
 // =====================
 function showPreview(radioInput){
+    const flights = data.blue_coalition.flights;
     const index = parseInt(radioInput.dataset.index);
     const flight = flights[index];
     const container = document.getElementById("previews");
@@ -275,7 +275,9 @@ function showPreview(radioInput){
     container.appendChild(div);
     currentPreview = div;
 
-    createFlightMap(flight, `map${index}`);
+    const bullseye = data.blue_coalition.bullseye;
+    let bullseye_latlon = L.latLng(bullseye.lat, bullseye.lon);
+    createFlightMap(flight, bullseye_latlon, `map${index}`);
 }
 </script>
 </body>

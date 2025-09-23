@@ -23,29 +23,17 @@ def upload():
     file.save(path)
 
     data = parser.parse_miz(path)
-    session["flights"] = data["flights"]
-    session["situation"] = data["situation"]
-    session["blue_task"] = data["blue_task"]
-    session["start_epoch"] = data["start_epoch"]
-    session["blue_bullseye"] = data["blue_bullseye"]
+    session["data"] = data
 
     return redirect("/select_flights")
 
 
 @app.route("/select_flights")
 def select_flights():
-    flights = session.get("flights", [])
-    situation = session.get("situation", "")
-    blue_task = session.get("blue_task", "")
-    start_epoch = session.get("start_epoch")
-    blue_bullseye = session.get("blue_bullseye")
+    data = session.get("data", [])
     return render_template(
         "select.html",
-        flights=flights,
-        situation=situation,
-        blue_task=blue_task,
-        start_epoch = start_epoch,
-        blue_bullseye = blue_bullseye
+        data=data,
     )
 
 
