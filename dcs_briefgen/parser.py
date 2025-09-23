@@ -39,6 +39,8 @@ def parse_miz(miz_path):
 
         blue = mission_data.get('coalition', {}).get('blue', {})
         blue_coalition = parse_coalition(blue, center_x, center_y, center_lat, center_lon)
+        red = mission_data.get('coalition', {}).get('red', {})
+        red_coalition = parse_coalition(red, center_x, center_y, center_lat, center_lon)
 
         # ---- Parse l10n/DEFAULT/dictionary for briefing text ----
         if 'l10n/DEFAULT/dictionary' in z.namelist():
@@ -62,11 +64,11 @@ def parse_miz(miz_path):
     return {
         "situation": situation.replace("\\\n", "\n"),  # remove Lua-style backslash line breaks
         "start_epoch": mission_epoch,
-        "blue_coalition": blue_coalition
+        "blue_coalition": blue_coalition,
+        "red_coalition": red_coalition
     }
 
 def parse_coalition(coalition, center_x, center_y, center_lat, center_lon):
-    flights = []
     bullseye_miz = coalition.get("bullseye", {})
     bullseye = {'lat': 0, 'lon': 0}
     if bullseye_miz:
@@ -81,33 +83,60 @@ def parse_coalition(coalition, center_x, center_y, center_lat, center_lon):
     if isinstance(countries, dict):
         countries = list(countries.values())
 
+    flights = []
+    ships = []
+    statics = []
+    helicopters = []
+    vehicles = []
     for c in countries:
         plane_data = c.get('plane', {})
-        groups = plane_data.get('group', [])
-        if isinstance(groups, dict):
-            groups = list(groups.values())
-        for g in groups:
-            units = g.get('units', [])
-            if isinstance(units, dict):
-                units = parse_units(list(units.values()))
+        ship_data = c.get('ship', {})
+        static_data = c.get('static', {})
+        helicopter_data = c.get('helicopter')
+        vehicle_data = c.get('vehicle')
 
-            flight = {
-                "group_name": g.get('name', 'Unknown'),
-                "frequency": g.get('frequency', 'Unknown'),
-                "is_awacs": g.get('task', 'Unknown') == "AWACS",
-                "is_tanker": g.get('task', 'Unknown') == "Refueling",
-                "units": units,
-                "tacan_channels": []
-            }
-            waypoints = extract_waypoints(g)
-            flight["waypoints"] = waypoints
-
-            flights.append(flight)
+        if plane_data:
+            flights.extend(parse_unit_type(plane_data))
+        if ship_data:
+            ships.extend(parse_unit_type(ship_data))
+        if static_data:
+            statics.extend(parse_unit_type(static_data))
+        if helicopter_data:
+            helicopters.extend(parse_unit_type(helicopter_data))
+        if vehicle_data:
+            vehicles.extend(parse_unit_type(vehicle_data))
     return {
         "flights": flights,
-        "task": "TASK",
+        "ships": ships,
+        "static": statics,
+        "helicopters": helicopters,
+        "vehicles": vehicles,
         "bullseye": bullseye
     }
+
+
+def parse_unit_type(unit_type):
+    groups = []
+    groups_raw = unit_type.get('group', [])
+    if isinstance(groups_raw, dict):
+        groups_raw = list(groups_raw.values())
+    for g in groups_raw:
+        units = g.get('units', [])
+        if isinstance(units, dict):
+            units = parse_units(list(units.values()))
+
+        group = {
+            "group_name": g.get('name', 'Unknown'),
+            "frequency": g.get('frequency', 'Unknown'),
+            "is_awacs": g.get('task', 'Unknown') == "AWACS",
+            "is_tanker": g.get('task', 'Unknown') == "Refueling",
+            "units": units,
+            "tacan_channels": []
+        }
+        waypoints = extract_waypoints(g, group)
+        group["waypoints"] = waypoints
+        groups.append(group)
+    return groups
 
 
 def parse_units(units_raw):
@@ -162,8 +191,8 @@ def heading_deg(wp1, wp2):
 
     return head
 
-def extract_waypoints(group):
-    route = group.get("route", {})
+def extract_waypoints(group_data, group):
+    route = group_data.get("route", {})
     points = route.get("points", {})
 
     waypoints = []
@@ -202,13 +231,13 @@ def extract_waypoints(group):
 
         wp["dist"] = round(dist, 1)
         wp["head"] = round(head)
-        channel, mode, unit_id = extract_tacan_info(wp)
-        if channel:
-            group["tacan_channels"].append({
-            "channel": channel,
-            "mode": mode,
-            "unit_id": unit_id
-        })
+        channel, mode, unit_id = extract_tacan_info(p)
+        if channel is not None:
+            group.setdefault("tacan_channels", []).append({
+                "channel": channel,
+                "mode": mode,
+                "unit_id": unit_id
+            })
 
         waypoints.append(wp)
         prev_wp = wp
@@ -218,22 +247,22 @@ def extract_waypoints(group):
 def extract_tacan_info(waypoint):
     """
     Extract frequency and modeChannel from a waypoint's tasks if ActivateBeacon is present.
-    Returns (frequency, modeChannel) or (None, None).
+    Returns (channel, mode, unit_id) or (None, None, None).
     """
     try:
         task = waypoint.get("task", {})
         if task.get("id") != "ComboTask":
             return None, None, None
 
-        tasks = task.get("params", {}).get("tasks", [])
-        for t in tasks:
+        tasks_dict = task.get("params", {}).get("tasks", {})
+        for t in tasks_dict.values():  # <- use .values() to get the actual task dicts
             if t.get("id") == "WrappedAction":
                 action = t.get("params", {}).get("action", {})
                 if action.get("id") == "ActivateBeacon":
                     params = action.get("params", {})
                     channel = params.get("channel")
                     mode = params.get("modeChannel")
-                    unit_id = params.get("unitId")
+                    unit_id = params.get("unitId")  # sometimes missing
                     return channel, mode, unit_id
     except Exception:
         pass

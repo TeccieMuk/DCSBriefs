@@ -1,9 +1,15 @@
 from flask import Flask, render_template, request, redirect, url_for, send_file, session
+from flask_session import Session
 import tempfile, zipfile, os, json
 from dcs_briefgen import parser, generator
 
 app = Flask(__name__)
 app.secret_key = "dev-secret-key"  # replace later
+app.config['SESSION_TYPE'] = 'filesystem'  # stores session on disk
+app.config['SESSION_FILE_DIR'] = './flask_session/'  # optional, directory for session files
+app.config['SESSION_PERMANENT'] = False  # optional, not permanent by default
+app.config['SESSION_USE_SIGNER'] = True  # optional, signs session cookie
+Session(app)
 
 @app.route('/')
 def index():
@@ -23,7 +29,7 @@ def upload():
     file.save(path)
 
     data = parser.parse_miz(path)
-    session["data"] = data
+    session['data'] = data
 
     return redirect("/select_flights")
 
@@ -31,6 +37,8 @@ def upload():
 @app.route("/select_flights")
 def select_flights():
     data = session.get("data", [])
+    flights = data.get('blue_coalition', {}).get('flights', [])
+    print(flights)
     return render_template(
         "select.html",
         data=data,

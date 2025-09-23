@@ -30,11 +30,12 @@
 
 <script>
 const data = {{ data|tojson }};  // Make sure this includes lat/lon
+console.log(data)
+console.log(data.blue_coalition.flights);
 const start_epoch = data.start_epoch;
 let currentPreview = null;
 const maxRangeNm = 100;
 const nmToMeters = 1852;
-console.log(data)
 
 // =====================
 // Format absolute time
@@ -185,6 +186,16 @@ function renderCommLadder(flight, allFlights) {
         return '';
     }
 
+    // Helper to format TACAN channels
+    function formatTacan(flight) {
+        if (!flight.tacan_channels || flight.tacan_channels.length === 0) return '-';
+
+        let channel = flight.tacan_channels[0]
+        return `${channel.channel}${channel.mode}`;
+        //return flight.tacan_channels.map(t => `${t.channel} (${t.identifier || '??'})`).join(', ');
+
+    }
+
     // Rows
     // 1) Intra-Flight
     tableHtml += `<tr>
@@ -212,7 +223,6 @@ function renderCommLadder(flight, allFlights) {
         tableHtml += `</tr>`;
     }
 
-    // 4) Tanker
     const tankerFlight = allFlights.find(f => f.is_tanker);
     if (tankerFlight) {
         tableHtml += `<tr>
@@ -222,11 +232,8 @@ function renderCommLadder(flight, allFlights) {
             tableHtml += `<td>${matchingChannel(radio, tankerFlight.frequency)}</td>`;
         });
         for (let i = tankerFlight.units[0].radios.length; i < numRadios; i++) tableHtml += `<td></td>`;
-        tableHtml += `<td>-</td></tr>`;
+        tableHtml += `<td>${formatTacan(tankerFlight)}</td></tr>`;
     }
-
-    // 4) ATC (optional, not implemented yet)
-    // ...
 
     tableHtml += `</tbody></table>`;
 
