@@ -153,7 +153,7 @@ function createFlightMap(flight, bullseye_latlon, mapId) {
 // Radio Table
 // =====================
 
-function renderCommLadder(flight, allFlights) {
+function renderCommLadder(flight, allFlights, ships) {
     const mainRadios = flight.units[0].radios || [];
     const numRadios = mainRadios.length;
 
@@ -174,7 +174,8 @@ function renderCommLadder(flight, allFlights) {
     }
 
     function renderFlightRow(main_flight, rowFlight, label) {
-        let row = `<tr><td>${label}</td><td>${rowFlight.group_name}</td>`;
+        console.log(rowFlight)
+        let row = `<tr><td>${label}</td><td>${rowFlight.name}</td>`;
         for (let i = 0; i < numRadios; i++) {
             const radio = main_flight.units[0].radios?.[i];
             row += `<td>${matchingChannel(radio, rowFlight.frequency)}</td>`;
@@ -184,11 +185,22 @@ function renderCommLadder(flight, allFlights) {
         return row;
     }
 
+    // Intra flight
     tableHtml += renderFlightRow(flight, flight, 'Intra-Flight');
 
+    // ATC
+    if ("linked_takeoff_unit" in flight){
+        const linked_ship_id = flight.linked_takeoff_unit;
+        const ships_units = ships.flatMap(f => f.units || []);
+        linked_ship = ships_units.find(f => f.unit_id == linked_ship_id);
+        if (linked_ship) tableHtml += renderFlightRow(flight, linked_ship, 'ATC');
+    }
+
+    // Tactical
     const awacsFlight = allFlights.find(f => f.is_awacs);
     if (awacsFlight) tableHtml += renderFlightRow(flight, awacsFlight, 'Tactical');
 
+    // Tanker
     const tankerFlight = allFlights.find(f => f.is_tanker);
     if (tankerFlight) tableHtml += renderFlightRow(flight, tankerFlight, 'Tanker');
 
@@ -228,6 +240,7 @@ function computeDestinationPoint(latlng, distanceNm, bearingDeg) {
 // =====================
 function showPreview(radioInput){
     const flights = data.blue_coalition.flights;
+    const ships = data.blue_coalition.ships;
     const index = parseInt(radioInput.dataset.index);
     const flight = flights[index];
     const container = document.getElementById("previews");
@@ -245,7 +258,7 @@ function showPreview(radioInput){
                     ${createWaypointTable(flight)}
                 </div>
                 <div class="comm-ladder">
-                    ${renderCommLadder(flight, flights)}
+                    ${renderCommLadder(flight, flights, ships)}
                 </div>
             </div>
             </div>

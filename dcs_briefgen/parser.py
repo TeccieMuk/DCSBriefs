@@ -126,7 +126,7 @@ def parse_unit_type(unit_type):
             units = parse_units(list(units.values()))
 
         group = {
-            "group_name": g.get('name', 'Unknown'),
+            "name": g.get('name', 'Unknown'),
             "frequency": g.get('frequency', 'Unknown'),
             "is_awacs": g.get('task', 'Unknown') == "AWACS",
             "is_tanker": g.get('task', 'Unknown') == "Refueling",
@@ -142,10 +142,18 @@ def parse_unit_type(unit_type):
 def parse_units(units_raw):
     units = []
     for u in units_raw:
+
+        frequency = u.get('frequency')
+        if frequency:
+            frequency = frequency / 1000000
+        else:
+            frequency = 'Unknown'
         units.append({
             "type": u.get('type', 'Unknown'),
             "radios": extract_radio_channels(u),
-            "unit_id": u.get('unitId')
+            "unit_id": u.get('unitId'),
+            "name": u.get('name'),
+            "frequency": frequency
         })
     return units
 
