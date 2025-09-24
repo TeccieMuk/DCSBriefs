@@ -14,11 +14,11 @@ body {
 }
 
 /* Map takes 2/3 of the screen width and 60% of screen height */
-.map {
+/* .map {
     width: 66vw;
     height: 60vh;
     margin-top: 10px;
-}
+} */
 
 table {
     border-collapse: collapse;
@@ -33,4 +33,46 @@ td, th {
 .wp-label {
     pointer-events: none; /* don't block map interaction */
     text-align: center;
+}
+
+.layout {
+  display: flex;
+  height: 100vh; /* full viewport */
+  overflow: hidden;
+}
+
+.map-container {
+  flex: 1; /* take all remaining space */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.map {
+  width: 100%;
+  height: 100%;
+  max-width: 100vh; /* keep square */
+  max-height: 100vh;
+  aspect-ratio: 1 / 1; /* modern browsers */
+}
+
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  width: 400px; /* fixed width for right column */
+  overflow: auto;
+}
+
+.waypoints {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0px;
+  overflow: visible
+}
+
+.comm-ladder {
+  flex: 1;
+  overflow-y: auto;
+  border-top: 1px solid #333; /* divider */
+  padding: 0px;
 }

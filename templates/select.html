@@ -236,10 +236,21 @@ function showPreview(radioInput){
 
     const div = document.createElement('div'); div.className='preview';
     div.innerHTML = `
-        <h3>Waypoints</h3>${createWaypointTable(flight)}
-        <h3>Map</h3><div id="map${index}" class="map" style="height:400px;"></div>
-        <h3>Radios</h3>${renderCommLadder(flight, flights)}
+        <div class="layout">
+            <div class="map-container">
+                <div id="map${index}" class="map"></div>
+            </div>
+            <div class="side-panel">
+                <div class="waypoints">
+                    ${createWaypointTable(flight)}
+                </div>
+                <div class="comm-ladder">
+                    ${renderCommLadder(flight, flights)}
+                </div>
+            </div>
+            </div>
     `;
+
     container.appendChild(div);
     currentPreview = div;
 
