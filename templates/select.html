@@ -173,36 +173,36 @@ function renderCommLadder(flight, allFlights, ships) {
         return idx !== -1 ? `${freq.toFixed(3)} [${idx+1}]` : '';
     }
 
-    function renderFlightRow(main_flight, rowFlight, label) {
+    function renderFlightRow(main_flight, rowFlight, tacan_channels, label) {
         console.log(rowFlight)
         let row = `<tr><td>${label}</td><td>${rowFlight.name}</td>`;
         for (let i = 0; i < numRadios; i++) {
             const radio = main_flight.units[0].radios?.[i];
             row += `<td>${matchingChannel(radio, rowFlight.frequency)}</td>`;
         }
-        row += `<td>${rowFlight.tacan_channels?.map(tc => tc.channel + tc.mode).join(', ') || '-'}</td>`;
+        row += `<td>${tacan_channels?.map(tc => tc.channel + tc.mode).join(', ') || '-'}</td>`;
         row += `</tr>`;
         return row;
     }
 
     // Intra flight
-    tableHtml += renderFlightRow(flight, flight, 'Intra-Flight');
+    tableHtml += renderFlightRow(flight, flight, [], 'Intra-Flight');
 
     // ATC
     if ("linked_takeoff_unit" in flight){
         const linked_ship_id = flight.linked_takeoff_unit;
         const ships_units = ships.flatMap(f => f.units || []);
         linked_ship = ships_units.find(f => f.unit_id == linked_ship_id);
-        if (linked_ship) tableHtml += renderFlightRow(flight, linked_ship, 'ATC');
+        if (linked_ship) tableHtml += renderFlightRow(flight, linked_ship, linked_ship.tacan_channels, 'ATC');
     }
 
     // Tactical
     const awacsFlight = allFlights.find(f => f.is_awacs);
-    if (awacsFlight) tableHtml += renderFlightRow(flight, awacsFlight, 'Tactical');
+    if (awacsFlight) tableHtml += renderFlightRow(flight, awacsFlight, [], 'Tactical');
 
     // Tanker
     const tankerFlight = allFlights.find(f => f.is_tanker);
-    if (tankerFlight) tableHtml += renderFlightRow(flight, tankerFlight, 'Tanker');
+    if (tankerFlight) tableHtml += renderFlightRow(flight, tankerFlight, tankerFlight.units[0].tacan_channels, 'Tanker');
 
     tableHtml += `</tbody></table>`;
     return tableHtml;

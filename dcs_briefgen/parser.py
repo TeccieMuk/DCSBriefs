@@ -131,7 +131,6 @@ def parse_unit_type(unit_type):
             "is_awacs": g.get('task', 'Unknown') == "AWACS",
             "is_tanker": g.get('task', 'Unknown') == "Refueling",
             "units": units,
-            "tacan_channels": []
         }
         waypoints = extract_waypoints(g, group)
         group["waypoints"] = waypoints
@@ -153,7 +152,8 @@ def parse_units(units_raw):
             "radios": extract_radio_channels(u),
             "unit_id": u.get('unitId'),
             "name": u.get('name'),
-            "frequency": frequency
+            "frequency": frequency,
+            "tacan_channels": []
         })
     return units
 
@@ -226,6 +226,11 @@ def extract_waypoints(group_data, group):
             linked_unit = p.get("linkUnit", None)
             if linked_unit:
                 group["linked_takeoff_unit"] = linked_unit
+        else:
+            linked_unit = extract_task_link(p)
+            if linked_unit:
+                group["linked_takeoff_unit"] = linked_unit
+
 
         # convert coords
         wp["lat"], wp["lon"] = miz_to_ll(p.get("y"), p.get("x"))
@@ -239,13 +244,23 @@ def extract_waypoints(group_data, group):
 
         wp["dist"] = round(dist, 1)
         wp["head"] = round(head)
-        channel, mode, unit_id = extract_tacan_info(p)
-        if channel is not None:
-            group.setdefault("tacan_channels", []).append({
-                "channel": channel,
-                "mode": mode,
-                "unit_id": unit_id
-            })
+        channels = extract_tacan_info(p)
+
+        if channels:
+            for channel_info in channels:
+                channel = channel_info["channel"]
+                mode = channel_info["mode"]
+                unit_id = channel_info["unit_id"]
+                unit = None
+                if len(group["units"]) == 1:
+                    unit = group["units"][0]
+                else:
+                    unit = next((u for u in group["units"] if u.get("unit_id") == unit_id), None)
+                if unit is not None:
+                    unit.setdefault("tacan_channels", []).append({
+                        "channel": channel,
+                        "mode": mode
+                    })
 
         waypoints.append(wp)
         prev_wp = wp
@@ -257,10 +272,11 @@ def extract_tacan_info(waypoint):
     Extract frequency and modeChannel from a waypoint's tasks if ActivateBeacon is present.
     Returns (channel, mode, unit_id) or (None, None, None).
     """
+    tacan_channels = []
     try:
         task = waypoint.get("task", {})
         if task.get("id") != "ComboTask":
-            return None, None, None
+            return None
 
         tasks_dict = task.get("params", {}).get("tasks", {})
         for t in tasks_dict.values():  # <- use .values() to get the actual task dicts
@@ -271,10 +287,28 @@ def extract_tacan_info(waypoint):
                     channel = params.get("channel")
                     mode = params.get("modeChannel")
                     unit_id = params.get("unitId")  # sometimes missing
-                    return channel, mode, unit_id
+                    tacan_channels.append({"channel": channel, "mode": mode, "unit_id": unit_id})
     except Exception:
         pass
-    return None, None, None
+    return tacan_channels
+
+def extract_task_link(waypoint):
+    try:
+        task = waypoint.get("task", {})
+        if task.get("id") != "ComboTask":
+            return None
+
+        tasks_dict = task.get("params", {}).get("tasks", {})
+        for t in tasks_dict.values():  # <- use .values() to get the actual task dicts
+            task_name = t.get("name", None)
+            if task_name and task_name.upper().startswith("LAND@"):
+                number = int(task_name.split("@")[1])
+                return number
+
+    except Exception:
+        pass
+    return None
+
 
 def extract_radio_channels(unit):
     radios = unit.get("Radio", {})
