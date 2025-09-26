@@ -4,6 +4,7 @@
     <title>Mission Flights</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -24,6 +25,7 @@
         <label for="flight{{ loop.index0 }}">{{ flight.group_name }} ({{ flight.units[0].type }})</label>
     </div>
     {% endfor %}
+    <button id="savePngsBtn">Save PNGs</button>
 </div>
 
 <div id="previews"></div>
@@ -34,8 +36,108 @@ console.log(data)
 console.log(data.blue_coalition.flights);
 const start_epoch = data.start_epoch;
 let currentPreview = null;
-const maxRangeNm = 100;
 const nmToMeters = 1852;
+let currentMap = null;
+
+// UI
+document.getElementById("savePngsBtn").addEventListener("click", async () => {
+    const kneeboardEl = document.querySelector(".kneeboard");
+    if (!kneeboardEl) {
+        alert("Kneeboard not found!");
+        return;
+    }
+
+    const targetWidth = 1358;
+    const targetHeight = 2048;
+
+    // ===== Helper to render kneeboard =====
+    async function captureElement(el) {
+        const canvas = await html2canvas(el, {
+            backgroundColor: "#fff",
+            scale: 2,
+            useCORS: true,
+            allowTaint: true
+        });
+
+        const outCanvas = document.createElement("canvas");
+        outCanvas.width = targetWidth;
+        outCanvas.height = targetHeight;
+        const ctx = outCanvas.getContext("2d");
+        ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+
+        return outCanvas.toDataURL("image/png");
+    }
+
+    // ===== Helper to render map at exact output size =====
+    async function renderMapPNG(flightMapData, bullseye) {
+        return new Promise((resolve) => {
+            // Offscreen container
+            const offscreen = document.createElement("div");
+            offscreen.style.width = targetWidth + "px";
+            offscreen.style.height = targetHeight + "px";
+            offscreen.style.position = "absolute";
+            offscreen.style.top = "-9999px";
+            document.body.appendChild(offscreen);
+
+            // Create Leaflet map
+            const map = L.map(offscreen, {
+                center: [bullseye.lat, bullseye.lon],
+                zoom: 10,
+                attributionControl: false,
+                zoomControl: false
+            });
+
+            // Add tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                crossOrigin: true
+            }).addTo(map);
+
+            // Add your polylines / markers from flightMapData
+            flightMapData.polylines.forEach(line => {
+                L.polyline(line.latlngs, { color: line.color, weight: line.weight }).addTo(map);
+            });
+            flightMapData.markers.forEach(marker => {
+                L.marker([marker.lat, marker.lon]).addTo(map);
+            });
+
+            // Wait for tiles to load
+            map.whenReady(() => {
+                html2canvas(offscreen, { backgroundColor: "#fff", scale: 2 }).then(canvas => {
+                    const outCanvas = document.createElement("canvas");
+                    outCanvas.width = targetWidth;
+                    outCanvas.height = targetHeight;
+                    const ctx = outCanvas.getContext("2d");
+                    ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+                    document.body.removeChild(offscreen);
+                    resolve(outCanvas.toDataURL("image/png"));
+                });
+            });
+        });
+    }
+
+    // ===== Helper to save =====
+    function saveDataURL(dataURL, filename) {
+        const link = document.createElement("a");
+        link.download = filename;
+        link.href = dataURL;
+        link.click();
+    }
+
+    try {
+        // 1) Render map
+        const mapDataURL = await renderMapPNG(dataForExportMap, data.blue_coalition.bullseye);
+        saveDataURL(mapDataURL, "map.png");
+
+        // 2) Render kneeboard
+        const kneeboardDataURL = await captureElement(kneeboardEl);
+        saveDataURL(kneeboardDataURL, "kneeboard.png");
+
+        alert("PNG export complete!");
+    } catch (err) {
+        console.error(err);
+        alert("Failed to export PNGs: " + err);
+    }
+});
 
 // =====================
 // Format absolute time
@@ -46,52 +148,20 @@ function formatTime(epochSeconds) {
 }
 
 // =====================
-// Waypoint Table
-// =====================
-function createWaypointTable(flight) {
-    let tableHtml = `<table class="waypoints">
-        <thead>
-            <tr>
-                <th>#</th><th>Desc</th><th>Time</th>
-                <th>Dist (nm)</th><th>Head (°)</th><th>Speed</th><th>Alt</th>
-            </tr>
-        </thead><tbody>`;
-
-    let prev = null;
-    flight.waypoints.forEach((wp, i) => {
-        let dist = 0, head = 0;
-        if (prev) {
-            const dx = wp.lon - prev.lon;
-            const dy = wp.lat - prev.lat;
-            dist = Math.sqrt(dx*dx + dy*dy) * 60; // rough nm
-            head = Math.atan2(dx, dy) * 180 / Math.PI;
-            if (head < 0) head += 360;
-        }
-        const absEpoch = start_epoch + wp.time;
-        const absTime = formatTime(absEpoch);
-
-        tableHtml += `<tr>
-            <td>${i+1}</td>
-            <td>${wp.name || 'WP'+(i+1)}</td>
-            <td>${absTime}</td>
-            <td>${dist.toFixed(1)}</td>
-            <td>${head.toFixed(0)}</td>
-            <td>${wp.speed.toFixed(0)}</td>
-            <td>${wp.alt.toFixed(0)}</td>
-        </tr>`;
-
-        prev = wp;
-    });
-
-    tableHtml += `</tbody></table>`;
-    return tableHtml;
-}
-
-// =====================
 // Flight Map
 // =====================
 function createFlightMap(flight, bullseye_latlon, mapId) {
-    const map = L.map(mapId).setView([flight.waypoints[0].lat, flight.waypoints[0].lon], 6);
+    const maxRangeBullseye = 100;
+    const defaultPadding = 1.1;
+
+    const bounds = L.latLngBounds(
+        computeDestinationPoint(bullseye_latlon, maxRangeBullseye * defaultPadding, 225), // SW corner
+        computeDestinationPoint(bullseye_latlon, maxRangeBullseye * defaultPadding, 45)   // NE corner
+    );
+
+    const map = L.map(mapId);
+    currentMap = map;
+    map.fitBounds(bounds);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: 'Map data © OpenStreetMap contributors'
     }).addTo(map);
@@ -134,19 +204,63 @@ function createFlightMap(flight, bullseye_latlon, mapId) {
     }
 
     // Bullseye range rings & radials
-    const maxRange = 100;
-    for (let r=20; r<=maxRange; r+=20) {
+    for (let r=20; r<=maxRangeBullseye; r+=20) {
         L.circle(bullseye_latlon, {radius:r*nmToMeters,color:'red',fill:false,dashArray:'4,4'}).addTo(map);
         // label north radial
         const labelPoint = computeDestinationPoint(bullseye_latlon, r, 0);
         L.marker(labelPoint, {icon:L.divIcon({className:'range-label', html:`<div style="color:red;font-size:12px;font-weight:bold;">${r}</div>`, iconSize:[20,20], iconAnchor:[10,10]})}).addTo(map);
     }
     for(let angle=0;angle<360;angle+=45){
-        const dest = computeDestinationPoint(bullseye_latlon, maxRange, angle);
+        const dest = computeDestinationPoint(bullseye_latlon, maxRangeBullseye, angle);
         L.polyline([bullseye_latlon,dest],{color:'red',weight:1,dashArray:'2,6'}).addTo(map);
     }
 
     return map;
+}
+
+// =====================
+// Waypoint Table
+// =====================
+function createWaypointTable(flight) {
+    let tableHtml = `<table class="kneeboard-table">
+        <thead>
+            <tr>
+                <th colspan="7" class="section-header">Waypoint Table</th>
+            </tr>
+            <tr>
+                <th>#</th><th>Desc</th><th>Time</th>
+                <th>Dist (nm)</th><th>Head (°)</th><th>Speed</th><th>Alt</th>
+            </tr>
+        </thead><tbody>`;
+
+    let prev = null;
+    flight.waypoints.forEach((wp, i) => {
+        let dist = 0, head = 0;
+        if (prev) {
+            const dx = wp.lon - prev.lon;
+            const dy = wp.lat - prev.lat;
+            dist = Math.sqrt(dx*dx + dy*dy) * 60; // rough nm
+            head = Math.atan2(dx, dy) * 180 / Math.PI;
+            if (head < 0) head += 360;
+        }
+        const absEpoch = start_epoch + wp.time;
+        const absTime = formatTime(absEpoch);
+
+        tableHtml += `<tr>
+            <td>${i+1}</td>
+            <td>${wp.name || 'WP'+(i+1)}</td>
+            <td>${absTime}</td>
+            <td>${dist.toFixed(1)}</td>
+            <td>${head.toFixed(0)}</td>
+            <td>${wp.speed.toFixed(0)}</td>
+            <td>${wp.alt.toFixed(0)}</td>
+        </tr>`;
+
+        prev = wp;
+    });
+
+    tableHtml += `</tbody></table>`;
+    return tableHtml;
 }
 
 // =====================
@@ -156,9 +270,12 @@ function createFlightMap(flight, bullseye_latlon, mapId) {
 function renderCommLadder(flight, allFlights, ships) {
     const mainRadios = flight.units[0].radios || [];
     const numRadios = mainRadios.length;
-
-    let tableHtml = `<table class="comm-ladder">
+    const nrColumns = numRadios + 3;
+    let tableHtml = `<table class="kneeboard-table">
         <thead>
+            <tr>
+                <th colspan="${nrColumns}}" class="section-header">Comm Ladder</th>
+            </tr>
             <tr>
                 <th>Agency</th>
                 <th>Callsign</th>`;
@@ -209,6 +326,44 @@ function renderCommLadder(flight, allFlights, ships) {
 }
 
 
+// =====================
+// Show Preview
+// =====================
+function showPreview(radioInput){
+    const flights = data.blue_coalition.flights;
+    const ships = data.blue_coalition.ships;
+    const index = parseInt(radioInput.dataset.index);
+    const flight = flights[index];
+    const container = document.getElementById("previews");
+
+    if(currentPreview) { currentPreview.remove(); currentPreview=null; }
+
+    const div = document.createElement('div'); div.className='preview';
+    div.innerHTML = `
+        <div class="layout">
+            <div class="map-container">
+                <div id="map${index}" class="map"></div>
+            </div>
+            <div class="side-panel">
+                <div class="kneeboard">
+                    <div class="kneeboard-section">
+                        ${createWaypointTable(flight)}
+                    </div>
+                    <div class="kneeboard-section">
+                        ${renderCommLadder(flight, flights, ships)}
+                    </div>
+                </div>
+            </div>
+            </div>
+    `;
+
+    container.appendChild(div);
+    currentPreview = div;
+
+    const bullseye = data.blue_coalition.bullseye;
+    let bullseye_latlon = L.latLng(bullseye.lat, bullseye.lon);
+    createFlightMap(flight, bullseye_latlon, `map${index}`);
+}
 
 // =====================
 // Util
@@ -235,42 +390,6 @@ function computeDestinationPoint(latlng, distanceNm, bearingDeg) {
     return [φ2 * 180 / Math.PI, λ2 * 180 / Math.PI];
 }
 
-// =====================
-// Show Preview
-// =====================
-function showPreview(radioInput){
-    const flights = data.blue_coalition.flights;
-    const ships = data.blue_coalition.ships;
-    const index = parseInt(radioInput.dataset.index);
-    const flight = flights[index];
-    const container = document.getElementById("previews");
-
-    if(currentPreview) { currentPreview.remove(); currentPreview=null; }
-
-    const div = document.createElement('div'); div.className='preview';
-    div.innerHTML = `
-        <div class="layout">
-            <div class="map-container">
-                <div id="map${index}" class="map"></div>
-            </div>
-            <div class="side-panel">
-                <div class="waypoints">
-                    ${createWaypointTable(flight)}
-                </div>
-                <div class="comm-ladder">
-                    ${renderCommLadder(flight, flights, ships)}
-                </div>
-            </div>
-            </div>
-    `;
-
-    container.appendChild(div);
-    currentPreview = div;
-
-    const bullseye = data.blue_coalition.bullseye;
-    let bullseye_latlon = L.latLng(bullseye.lat, bullseye.lon);
-    createFlightMap(flight, bullseye_latlon, `map${index}`);
-}
 </script>
 </body>
 </html>
